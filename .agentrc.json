@@ -1,0 +1,44 @@
+{
+  "agents": {
+    "project-setup": {
+      "enabled": true,
+      "priority": 1,
+      "dependencies": []
+    },
+    "core-engine": {
+      "enabled": true,
+      "priority": 2,
+      "dependencies": ["project-setup"]
+    },
+    "multi-language": {
+      "enabled": true,
+      "priority": 3,
+      "dependencies": ["project-setup"]
+    },
+    "classifiers": {
+      "enabled": true,
+      "priority": 3,
+      "dependencies": ["project-setup"]
+    },
+    "evaluation": {
+      "enabled": true,
+      "priority": 4,
+      "dependencies": ["core-engine", "classifiers"]
+    },
+    "testing": {
+      "enabled": true,
+      "priority": 4,
+      "dependencies": ["core-engine"]
+    },
+    "documentation": {
+      "enabled": true,
+      "priority": 5,
+      "dependencies": ["core-engine"]
+    },
+    "devops": {
+      "enabled": true,
+      "priority": 5,
+      "dependencies": ["project-setup", "testing"]
+    }
+  }
+}
