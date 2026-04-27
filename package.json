@@ -1,0 +1,82 @@
+{
+  "name": "confidence-router",
+  "version": "0.1.0",
+  "description": "Decision engine for route/clarify/fallback patterns",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "test:ui": "vitest --ui",
+    "benchmark": "node benchmarks/decision-engine.mjs",
+    "lint": "eslint src tests examples",
+    "lint:fix": "eslint src tests examples --fix",
+    "format": "prettier --write src tests examples",
+    "format:check": "prettier --check src tests examples",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "pnpm run clean && pnpm run build"
+  },
+  "keywords": [
+    "routing",
+    "confidence",
+    "classification",
+    "intent-routing",
+    "decision-engine",
+    "nlp",
+    "ai"
+  ],
+  "author": "Rick Somers <rick@reaatech.com> (https://reaatech.com)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/reaatech/confidence-router.git"
+  },
+  "bugs": {
+    "url": "https://github.com/reaatech/confidence-router/issues"
+  },
+  "homepage": "https://github.com/reaatech/confidence-router#readme",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
+    "@vitest/ui": "^3.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
