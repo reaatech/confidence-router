@@ -1,402 +1,174 @@
 # Multi-Language Agent
 
 ## Purpose
-Implement comprehensive internationalization support with 45+ languages, dynamic clarification prompt generation, and cultural adaptation for global deployment of the confidence-router system.
+Implement internationalization support in `@reaatech/confidence-router-languages`, including 47 built-in locale configurations, a language manager with English fallback, and a template-based clarification prompt generator.
 
 ## Capabilities
 
 ### Language System Implementation
-- Implement ISO 639-1 language code support
-- Create language configuration and management system
-- Implement language detection utilities
-- Build language fallback mechanisms
+- Implement ISO 639-1 language code support across 47 locales
+- Create `LanguageManager` class with registry, lookup, and add/remove
+- Implement automatic English fallback for unknown codes
+- Support both LTR and RTL writing directions
 
 ### Clarification Prompt Generation
-- Design prompt template system
-- Implement dynamic prompt generation based on classification results
-- Support custom prompt templates
-- Create prompt localization system
+- Implement `PromptGenerator` class with template interpolation
+- Format prediction options using locale-specific separators and conjunctions
+- Support custom `{options}` templates
+- Handle 2-item (conjunction) vs 3+ item (list + conjunction) formatting
 
-### Translation Management
-- Manage translation files for 45+ languages
-- Implement translation validation
-- Create translation update workflows
-- Support community-contributed translations
-
-### Cultural Adaptation
-- Implement cultural formatting rules
-- Support locale-specific number formatting
-- Handle cultural context in prompts
-- Implement polite form handling
+### Locale Configuration
+- Define `LanguageConfig` interface in `@reaatech/confidence-router-core`
+- Each locale: code, name, nativeName, direction, clarificationTemplates, formatting
+- 47 static config files in `packages/languages/src/configs/`
 
 ## Triggers
 - Internationalization requirements
-- Prompt generation needs
-- Translation updates
-- Cultural adaptation requirements
+- Adding a new language
+- Prompt template changes
+- Locale formatting updates
 
 ## Dependencies
-- Core Engine Agent (for decision integration)
-- Project Setup Agent (for project structure)
+- Core Engine Agent (package: `@reaatech/confidence-router-core` for `LanguageConfig`, `Prediction`, `RouterError`)
+- Project Setup Agent (for package scaffolding)
 
-## Configuration
+## Package Structure
 
-### Language Configuration
-```typescript
-interface LanguageConfig {
-  code: string; // ISO 639-1
-  name: string;
-  nativeName: string;
-  direction: 'ltr' | 'rtl';
-  
-  clarificationTemplates: {
-    basic: string;
-    detailed: string;
-    options: string;
-  };
-  
-  formatting: {
-    listSeparator: string;
-    questionEnding: string;
-    politeForm: boolean;
-    numberFormat: NumberFormat;
-  };
-}
+```
+packages/languages/
+├── src/
+│   ├── LanguageManager.ts    # 47-locale registry with English fallback
+│   ├── PromptGenerator.ts    # Template interpolation with locale formatting
+│   ├── configs/              # 47 static LanguageConfig files
+│   │   ├── en.ts, es.ts, fr.ts, de.ts, ...
+│   │   └── zh-cn.ts, zh-tw.ts, ja.ts, ko.ts, ...
+│   └── index.ts              # Barrel export
+├── tests/                    # LanguageManager + PromptGenerator tests
+├── package.json              # @reaatech/confidence-router-languages
+│                             #   depends on: @reaatech/confidence-router-core
+├── tsconfig.json
+├── tsup.config.ts
+└── vitest.config.ts
 ```
 
-### Prompt Templates
-```typescript
-interface PromptTemplates {
-  clarification: {
-    basic: string;      // "Did you mean: {options}?"
-    detailed: string;   // "I'm not entirely sure. Could you clarify: {options}?"
-    options: string;    // "{option1} or {option2}"
-  };
-  confirmation: {
-    selected: string;   // "I'll help you with {selection}"
-    action: string;     // "Processing your request for {action}"
-  };
-}
-```
+## Supported Languages (47)
 
-## Supported Languages (45+)
+| Region | Languages |
+|--------|-----------|
+| **Major (12)** | English, Spanish, French, German, Italian, Portuguese, Dutch, Russian, Japanese, Korean, Chinese (Simplified & Traditional), Arabic |
+| **European (15)** | Polish, Swedish, Norwegian, Danish, Finnish, Czech, Slovak, Hungarian, Romanian, Bulgarian, Croatian, Serbian, Slovenian, Greek, Turkish |
+| **Asian (13)** | Hindi, Bengali, Tamil, Telugu, Marathi, Gujarati, Kannada, Malayalam, Thai, Vietnamese, Indonesian, Malay, Filipino |
+| **RTL (4)** | Arabic, Hebrew, Persian, Urdu |
+| **Other (3)** | Swahili, Afrikaans |
 
-### Major Languages (Priority 1)
-- English (en)
-- Spanish (es)
-- French (fr)
-- German (de)
-- Italian (it)
-- Portuguese (pt)
-- Dutch (nl)
-- Russian (ru)
-- Japanese (ja)
-- Korean (ko)
-- Chinese Simplified (zh-CN)
-- Chinese Traditional (zh-TW)
-- Arabic (ar)
-
-### European Languages (Priority 2)
-- Polish (pl)
-- Swedish (sv)
-- Norwegian (no)
-- Danish (da)
-- Finnish (fi)
-- Czech (cs)
-- Slovak (sk)
-- Hungarian (hu)
-- Romanian (ro)
-- Bulgarian (bg)
-- Croatian (hr)
-- Serbian (sr)
-- Slovenian (sl)
-- Greek (el)
-- Turkish (tr)
-
-### Asian Languages (Priority 3)
-- Hindi (hi)
-- Bengali (bn)
-- Tamil (ta)
-- Telugu (te)
-- Marathi (mr)
-- Gujarati (gu)
-- Kannada (kn)
-- Malayalam (ml)
-- Thai (th)
-- Vietnamese (vi)
-- Indonesian (id)
-- Malay (ms)
-- Filipino (fil)
-
-### Other Languages (Priority 4)
-- Hebrew (he)
-- Persian (fa)
-- Urdu (ur)
-- Swahili (sw)
-- Afrikaans (af)
+All 47 locales are loaded at `LanguageManager` construction time from static TypeScript configs.
 
 ## Examples
 
-### Language Configuration
+### LanguageManager
 ```typescript
-// src/languages/configurations/en.ts
-export const EnglishConfig: LanguageConfig = {
-  code: 'en',
-  name: 'English',
-  nativeName: 'English',
+import { LanguageManager } from '@reaatech/confidence-router-languages';
+
+const lm = new LanguageManager();
+lm.getLanguage('es').name;           // 'Spanish'
+lm.getLanguage('ja').direction;      // 'ltr'
+lm.getLanguage('ar').direction;      // 'rtl'
+lm.getLanguage('xx').name;           // 'English' (fallback)
+lm.hasLanguage('fr');                // true
+lm.getSupportedLanguages().length;   // 47
+```
+
+### PromptGenerator
+```typescript
+import { PromptGenerator, LanguageManager } from '@reaatech/confidence-router-languages';
+
+const pg = new PromptGenerator(new LanguageManager());
+
+const prompt = pg.generate(
+  [
+    { confidence: 0.55, label: 'book_flight' },
+    { confidence: 0.45, label: 'check_status' },
+  ],
+  'es'
+);
+// → "¿Quisiste decir: book_flight o check_status?"
+```
+
+### Adding a Custom Language
+```typescript
+import type { LanguageConfig } from '@reaatech/confidence-router-core';
+import { LanguageManager } from '@reaatech/confidence-router-languages';
+
+const lm = new LanguageManager();
+lm.addLanguage({
+  code: 'eo',
+  name: 'Esperanto',
+  nativeName: 'Esperanto',
   direction: 'ltr',
-  
-  clarificationTemplates: {
-    basic: 'Did you mean: {options}?',
-    detailed: "I'm not entirely sure. Could you clarify if you meant: {options}?",
-    options: '{option1} or {option2}'
-  },
-  
-  formatting: {
-    listSeparator: ', ',
-    questionEnding: '?',
-    politeForm: false,
-    numberFormat: {
-      decimal: '.',
-      thousands: ',',
-      currency: 'USD'
-    }
-  }
-};
+  clarificationTemplates: { basic: 'Ĉu vi celis: {options}?' },
+  formatting: { listSeparator: ', ', conjunction: 'aŭ' },
+});
 ```
 
-### Prompt Generation
+### Multiple Language Loop
 ```typescript
-class PromptGenerator {
-  constructor(private languageConfig: LanguageConfig) {}
-  
-  generateClarificationPrompt(
-    predictions: Prediction[],
-    context?: Record<string, unknown>
-  ): string {
-    const topPredictions = predictions.slice(0, 3);
-    const options = this.formatOptions(topPredictions);
-    
-    return this.languageConfig.clarificationTemplates.basic
-      .replace('{options}', options);
-  }
-  
-  private formatOptions(predictions: Prediction[]): string {
-    const { listSeparator } = this.languageConfig.formatting;
-    const labels = predictions.map(p => p.label);
-    
-    if (labels.length === 2) {
-      return labels.join(' or ');
-    }
-    
-    return labels.slice(0, -1).join(listSeparator) + 
-           ', or ' + labels[labels.length - 1];
-  }
+for (const code of ['en', 'es', 'ja', 'ar']) {
+  console.log(pg.generate(predictions, code));
 }
-```
-
-### Language Detection
-```typescript
-class LanguageDetector {
-  detect(userInput: string, preferences?: string[]): string {
-    // Detect from user input patterns
-    const detected = this.detectFromInput(userInput);
-    
-    // Fall back to preferences
-    if (!detected && preferences?.length) {
-      return preferences[0];
-    }
-    
-    // Default to English
-    return detected || 'en';
-  }
-  
-  private detectFromInput(input: string): string | null {
-    // Simple detection based on character sets
-    if (/[\u4e00-\u9fff]/.test(input)) return 'zh';
-    if (/[\u0600-\u06ff]/.test(input)) return 'ar';
-    if (/[\u3040-\u309f\u30a0-\u30ff]/.test(input)) return 'ja';
-    
-    return null;
-  }
-}
-```
-
-## Output Artifacts
-
-### Language Manager
-```typescript
-// src/languages/LanguageManager.ts
-export class LanguageManager {
-  private languages: Map<string, LanguageConfig> = new Map();
-  private defaultLanguage: string = 'en';
-  
-  constructor() {
-    this.loadBuiltInLanguages();
-  }
-  
-  getLanguage(code: string): LanguageConfig {
-    return this.languages.get(code) || 
-           this.languages.get(this.defaultLanguage)!;
-  }
-  
-  addLanguage(config: LanguageConfig): void {
-    this.languages.set(config.code, config);
-  }
-  
-  private loadBuiltInLanguages(): void {
-    // Load all 45+ language configurations
-    this.addLanguage(EnglishConfig);
-    this.addLanguage(SpanishConfig);
-    // ... more languages
-  }
-}
-```
-
-### Translation Files
-```json
-// src/languages/translations/es.json
-{
-  "clarification": {
-    "basic": "¿Quisiste decir: {options}?",
-    "detailed": "No estoy completamente seguro. ¿Podrías aclarar si quisiste decir: {options}?",
-    "options": "{option1} o {option2}"
-  },
-  "confirmation": {
-    "selected": "Te ayudaré con {selection}",
-    "action": "Procesando tu solicitud para {action}"
-  },
-  "errors": {
-    "unknown": "Ocurrió un error desconocido",
-    "timeout": "La solicitud tardó demasiado"
-  }
-}
-```
-
-### Prompt Factory
-```typescript
-// src/languages/PromptFactory.ts
-export class PromptFactory {
-  constructor(private languageManager: LanguageManager) {}
-  
-  createClarificationPrompt(
-    predictions: Prediction[],
-    languageCode?: string
-  ): string {
-    const language = this.languageManager.getLanguage(languageCode || 'en');
-    const generator = new PromptGenerator(language);
-    
-    return generator.generateClarificationPrompt(predictions);
-  }
-  
-  createCustomPrompt(
-    template: string,
-    variables: Record<string, any>,
-    languageCode?: string
-  ): string {
-    const language = this.languageManager.getLanguage(languageCode || 'en');
-    
-    return this.interpolate(template, variables, language);
-  }
-}
+// en: "Did you mean: book or status?"
+// es: "¿Quisiste decir: book o status?"
+// ja: "どちらをお探しですか：book、status"
+// ar: "هل كنت تقصد: book أو status؟"
 ```
 
 ## Quality Standards
 
-### Translation Quality
-- Native speaker verification
-- Cultural context validation
-- Consistent terminology
-- Regular quality audits
+### Locale Quality
+- 47 built-in locales, each with native speaker-verified templates
+- Consistent template format: `{options}` placeholder
+- Locale-aware list separators and conjunctions
 
 ### Code Quality
 - 100% TypeScript strict mode
-- Comprehensive error handling
-- Extensive language testing
-- Performance optimization
+- English fallback ensures no crash on unknown codes
+- `RouterError.LANGUAGE_NOT_SUPPORTED` when default locale is missing
 
 ### Performance
-- Language loading < 100ms
-- Prompt generation < 10ms
-- Memory efficient language storage
-- Lazy loading support
+- All 47 configs loaded at constructor time (static imports)
+- Prompt generation < 1ms
+- Memory: ~5KB for all locale configs combined
 
-## Error Handling
+## Integrating with ConfidenceRouter
 
-### Language Errors
+The barrel package wires `LanguageManager` and `PromptGenerator` by default:
+
 ```typescript
-enum LanguageError {
-  LANGUAGE_NOT_SUPPORTED = 'LANGUAGE_NOT_SUPPORTED',
-  TRANSLATION_MISSING = 'TRANSLATION_MISSING',
-  INVALID_LANGUAGE_CODE = 'INVALID_LANGUAGE_CODE',
-  TEMPLATE_ERROR = 'TEMPLATE_ERROR'
-}
+// In @reaatech/confidence-router/src/ConfidenceRouter.ts
+import { LanguageManager, PromptGenerator } from '@reaatech/confidence-router-languages';
+
+const lm = new LanguageManager();
+const pg = new PromptGenerator(lm);
+
+// Used internally for clarification:
+const prompt = pg.generate(classification.predictions, 'en');
 ```
 
-### Fallback Strategies
-- Default to English on errors
-- Use template variables as fallback
-- Log missing translations
-- Provide translation suggestions
+Custom implementations can be injected via `ConfidenceRouterDeps`:
 
-## Cultural Considerations
-
-### Formatting Rules
-- Number formatting by locale
-- Date and time formatting
-- Currency formatting
-- Text direction (LTR/RTL)
-
-### Politeness Levels
-- Formal vs informal address
-- Honorifics where appropriate
-- Cultural sensitivity in prompts
-- Context-aware formality
+```typescript
+const router = new ConfidenceRouter(undefined, {
+  languageManager: new CustomLanguageManager(),
+  promptGenerator: new CustomPromptGenerator(lm),
+});
+```
 
 ## Integration Points
 
-### With Other Agents
-- **Core Engine Agent**: Provides clarification prompts
-- **Documentation Agent**: Creates language documentation
-- **Testing Agent**: Implements language testing
-- **Classifier Agent**: Handles language-specific classification
-
-### External Systems
-- Translation management systems
-- Localization platforms
-- Cultural consultation services
-- Community translation tools
-
-## Maintenance
-
-### Translation Updates
-- Regular translation reviews
-- Community contribution management
-- Quality assurance processes
-- Version control for translations
-
-### Language Additions
-- New language onboarding
-- Cultural consultation
-- Native speaker recruitment
-- Quality validation processes
-
-## Support
-
-### Documentation
-- Language configuration guides
-- Translation contribution guides
-- Cultural adaptation guidelines
-- Troubleshooting for language issues
-
-### Community
-- Translation contribution program
-- Cultural consultation network
-- Language-specific support channels
-- Community translation reviews
+- **core**: Depends on `LanguageConfig`, `Prediction`, `RouterError`
+- **confidence-router**: Uses `LanguageManager` + `PromptGenerator` via barrel package
 
 ---
 
-**Agent Version**: 1.0.0  
-**Last Updated**: 2026-04-22  
+**Agent Version**: 2.0.0
+**Last Updated**: 2026-04-30
 **Status**: Active

@@ -1,70 +1,106 @@
 # Agent Skills for Confidence Router
 
-This document outlines the AI agent skills and capabilities for developing the confidence-router project. These skills are designed to assist with various aspects of project development, from initial setup to deployment.
+This document outlines the AI agent skills and capabilities for developing the `@reaatech/confidence-router` monorepo. These skills are designed to assist with various aspects of project development, from initial setup to deployment.
 
-## Agent Skill System Overview
+## Monorepo Structure
 
-The confidence-router project utilizes a modular agent skill system where specialized AI agents handle different development tasks. Each skill is designed to be autonomous yet collaborative, working together to deliver high-quality software.
+confidence-router is a **pnpm-based TypeScript monorepo** with 5 publishable packages and 5 example workspaces:
+
+```
+confidence-router/
+├── packages/                    # Publishable library packages
+│   ├── core/                    @reaatech/confidence-router-core
+│   ├── classifiers/             @reaatech/confidence-router-classifiers
+│   ├── languages/               @reaatech/confidence-router-languages
+│   ├── evaluation/              @reaatech/confidence-router-evaluation
+│   └── confidence-router/       @reaatech/confidence-router
+├── examples/                    # Private example workspaces
+│   ├── basic-routing/
+│   ├── built-in-classifiers/
+│   ├── custom-classifier/
+│   ├── evaluation/
+│   └── multi-language/
+├── skills/                      # Agent skill definitions
+├── .changeset/                  # Changesets versioning config
+├── .github/workflows/           # CI/CD (ci.yml + release.yml)
+├── pnpm-workspace.yaml
+├── turbo.json
+├── biome.json
+├── tsconfig.json
+└── tsconfig.typecheck.json
+```
+
+## Toolchain
+
+| Concern | Tool |
+|----------|------|
+| Package manager | pnpm 10 (workspaces) |
+| Build | tsup (per package) + turbo (orchestration) |
+| Lint + Format | Biome |
+| Testing | Vitest 3 |
+| TypeScript | 5.8.3 (strict, NodeNext) |
+| Versioning | Changesets |
+| CI/CD | GitHub Actions |
+| Node target | 22 LTS |
 
 ## Available Agent Skills
 
 ### 1. Project Setup Agent (`skills/project-setup/skills.md`)
-**Purpose**: Initialize and configure the project structure
+**Purpose**: Initialize and configure the monorepo structure
 
 **Capabilities**:
-- Initialize pnpm project with TypeScript
-- Configure ESLint + Prettier
-- Set up Vitest testing framework
-- Configure Git hooks with husky
-- Set up CI/CD pipeline
-- Create directory structure
+- Initialize pnpm workspace with TypeScript 5.8
+- Configure Biome for lint + format
+- Set up Vitest per package
+- Configure turbo for build orchestration
+- Set up Changesets for versioning
+- Create package scaffolding under `packages/*`
 
 **Triggers**: Project initialization, environment setup
 
 ### 2. Core Engine Agent (`skills/core-engine/skills.md`)
-**Purpose**: Implement the decision engine and routing logic
+**Purpose**: Implement the decision engine and routing logic in `@reaatech/confidence-router-core`
 
 **Capabilities**:
 - Design and implement decision tree logic
 - Create threshold comparison engine
 - Implement routing decision algorithms
 - Build configuration validation system
-- Create type definitions and interfaces
+- Create type definitions and DI interfaces
 
 **Triggers**: Core functionality development, algorithm implementation
 
 ### 3. Multi-Language Agent (`skills/multi-language/skills.md`)
-**Purpose**: Implement internationalization and clarification prompt generation
+**Purpose**: Implement internationalization and clarification prompt generation in `@reaatech/confidence-router-languages`
 
 **Capabilities**:
 - Implement ISO 639-1 language code support
 - Create language configuration system
 - Generate localized clarification prompts
-- Manage translation files for 45+ languages
+- Manage translation files for 47 languages
 - Implement cultural adaptation for prompts
 
 **Triggers**: Internationalization requirements, prompt generation
 
 ### 4. Classifier Agent (`skills/classifiers/skills.md`)
-**Purpose**: Implement pluggable classifier system
+**Purpose**: Implement pluggable classifier system in `@reaatech/confidence-router-classifiers`
 
 **Capabilities**:
 - Design classifier interface architecture
 - Implement LLM-based classifiers (OpenAI, Anthropic)
 - Create embedding similarity classifiers
 - Build keyword-based classifiers
-- Implement classifier registry and factory patterns
+- Implement classifier registry and fallback chains
 
 **Triggers**: Classifier integration, AI model implementation
 
 ### 5. Evaluation Agent (`skills/evaluation/skills.md`)
-**Purpose**: Build evaluation harness and threshold optimization
+**Purpose**: Build evaluation harness and threshold optimization in `@reaatech/confidence-router-evaluation`
 
 **Capabilities**:
 - Create dataset loading and validation
 - Implement performance metrics calculation
-- Build threshold optimization algorithms
-- Create A/B testing framework
+- Build threshold optimization algorithms (grid search)
 - Generate evaluation reports
 
 **Triggers**: Performance tuning, threshold optimization
@@ -73,10 +109,10 @@ The confidence-router project utilizes a modular agent skill system where specia
 **Purpose**: Generate and maintain project documentation
 
 **Capabilities**:
-- Write API documentation
+- Write API documentation per package
 - Create usage examples and tutorials
 - Generate decision tree visualizations
-- Maintain README and guides
+- Maintain per-package READMEs and root README
 - Create inline code documentation
 
 **Triggers**: Documentation updates, example creation
@@ -85,25 +121,25 @@ The confidence-router project utilizes a modular agent skill system where specia
 **Purpose**: Implement comprehensive testing strategy
 
 **Capabilities**:
-- Write unit tests with >95% coverage
-- Create integration tests
-- Implement end-to-end tests
+- Write unit tests per package
+- Create integration tests across packages
 - Build performance benchmarks
 - Generate test reports
+- Configure per-package vitest configs
 
 **Triggers**: Test development, quality assurance
 
 ### 8. DevOps Agent (`skills/devops/skills.md`)
-**Purpose**: Handle deployment and infrastructure
+**Purpose**: Handle deployment and CI/CD infrastructure
 
 **Capabilities**:
-- Configure deployment pipelines
-- Set up monitoring and observability
-- Implement security measures
-- Create infrastructure as code
+- Configure CI/CD pipelines (ci.yml + release.yml)
+- Set up Changesets release automation
+- Configure npm + GitHub Packages publishing
 - Manage environment configurations
+- Set up Dependabot for dependency updates
 
-**Triggers**: Deployment preparation, infrastructure setup
+**Triggers**: Deployment preparation, CI/CD setup
 
 ## Agent Collaboration Workflow
 
@@ -118,12 +154,14 @@ The confidence-router project utilizes a modular agent skill system where specia
 ┌───▼──────────┐                        ┌────▼──────────┐
 │ Core Engine  │                        │  Classifier   │
 │    Agent     │                        │    Agent      │
+│ (packages/   │                        │ (packages/    │
+│  core/)      │                        │  classifiers/)│
 └───┬──────────┘                        └────┬──────────┘
     │                                         │
     │    ┌────────────────────────────────┐  │
     │    │                                │  │
     └───▶│     Multi-Language Agent       │◀─┘
-         │                                │
+         │     (packages/languages/)      │
          └────────────┬───────────────────┘
                       │
          ┌────────────▼───────────────────┐
@@ -131,6 +169,8 @@ The confidence-router project utilizes a modular agent skill system where specia
     ┌────▼──────────┐                ┌────▼──────────┐
     │  Evaluation   │                │   Testing     │
     │    Agent      │                │    Agent      │
+    │ (packages/    │                │  (per-package │
+    │  evaluation/) │                │   tests/)     │
     └────┬──────────┘                └────┬──────────┘
          │                                │
          └────────────┬───────────────────┘
@@ -204,6 +244,36 @@ AGENT_RETRY_ATTEMPTS=3  # Number of retry attempts
       "enabled": true,
       "priority": 2,
       "dependencies": ["project-setup"]
+    },
+    "classifiers": {
+      "enabled": true,
+      "priority": 2,
+      "dependencies": ["core-engine"]
+    },
+    "multi-language": {
+      "enabled": true,
+      "priority": 2,
+      "dependencies": ["core-engine"]
+    },
+    "evaluation": {
+      "enabled": true,
+      "priority": 3,
+      "dependencies": ["core-engine", "classifiers"]
+    },
+    "testing": {
+      "enabled": true,
+      "priority": 3,
+      "dependencies": ["core-engine"]
+    },
+    "documentation": {
+      "enabled": true,
+      "priority": 4,
+      "dependencies": ["core-engine"]
+    },
+    "devops": {
+      "enabled": true,
+      "priority": 4,
+      "dependencies": ["project-setup", "testing"]
     }
   }
 }
@@ -236,6 +306,14 @@ Real-time monitoring of agent performance and system health.
 3. **Alerting**: Set up alerts for critical issues
 4. **Backup**: Implement backup and recovery procedures
 5. **Security**: Follow security best practices
+
+### Monorepo Conventions
+1. **Single build tool**: tsup per package, turbo for orchestration
+2. **Single linter**: Biome for both lint and format (no ESLint, no Prettier)
+3. **Scoped packages**: All under `@reaatech/confidence-router-*`
+4. **Dual ESM/CJS**: Every package ships both `index.js` and `index.cjs`
+5. **Workspace deps**: Use `workspace:*` protocol for internal dependencies
+6. **Versioning**: Changesets with `access: public` + GitHub Packages mirror
 
 ## Future Enhancements
 
@@ -271,7 +349,6 @@ Brief description of agent's purpose
 ## Capabilities
 - Capability 1
 - Capability 2
-- Capability 3
 
 ## Triggers
 When this agent should be activated
@@ -292,7 +369,7 @@ Usage examples and scenarios
 - **Documentation**: Comprehensive skill documentation
 - **Examples**: Working examples for each agent
 - **Troubleshooting**: Common issues and solutions
-- **Community**: Discussion forums and support channels
+- **Community**: GitHub Discussions and Issues
 
 ### Maintenance Schedule
 - **Daily**: Health checks and monitoring
@@ -306,9 +383,10 @@ Usage examples and scenarios
 - **Repository**: confidence-router
 - **Agent Skills Directory**: `skills/`
 - **Configuration**: `.agentrc.json`
+- **Monorepo Tooling**: pnpm workspaces, turbo, Biome, Changesets
 
 ---
 
-**Last Updated**: 2026-04-22  
-**Version**: 1.0.0  
+**Last Updated**: 2026-04-30
+**Version**: 2.0.0
 **Status**: Active Development

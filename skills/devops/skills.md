@@ -1,209 +1,125 @@
 # DevOps Agent
 
 ## Purpose
-Handle CI/CD pipeline configuration, basic deployment automation, and development environment setup for the confidence-router npm library.
+Handle CI/CD infrastructure, release automation, and deployment configuration for the confidence-router monorepo. Manages GitHub Actions workflows, Changesets publishing, npm + GitHub Packages dual registry, and Dependabot configuration.
 
 ## Capabilities
 
-### CI/CD Pipeline Management
-- Configure GitHub Actions workflows
-- Set up automated testing pipelines
-- Create build and release automation
-- Implement quality gates
+### CI/CD Pipeline
+- Configure `.github/workflows/ci.yml` with separated job structure
+- Set up pnpm store caching with `actions/cache@v4`
+- Configure test matrix across Node 20 and 22
+- Implement `all-checks` gate job for branch protection
 
-### Basic Containerization
-- Create Dockerfile for example/demo server
-- Configure docker-compose for local development
+### Release Automation
+- Configure `.github/workflows/release.yml` with `changesets/action@v1`
+- Set up npm publishing via `NPM_TOKEN` secret
+- Set up GitHub Packages mirror via `GITHUB_TOKEN`
+- Enable npm provenance with `NPM_CONFIG_PROVENANCE: 'true'`
+- Tag `push: branches: [main]` trigger after first manual publish
 
-### Environment Management
-- Configure development environments
-- Manage environment validation
+### Changesets Configuration
+- Configure `.changeset/config.json` with `access: public`
+- Set up `@changesets/changelog-github` for PR-linked changelogs
+- Configure `updateInternalDependencies: patch`
+- Manage `workspace:*` protocol for internal deps
 
-## Triggers
-- Deployment preparation
-- CI/CD pipeline configuration
-- Release automation
+### Dependency Management
+- Configure `.github/dependabot.yml` for weekly npm updates
+- Set up GitHub Actions version updates
+- Configure versioning strategy and reviewer assignment
+
+### Repository Configuration
+- Maintain `.npmrc` with `shamefully-hoist=false` and `strict-peer-dependencies=true`
+- Maintain `.gitignore` with build artifact patterns
+- Configure `packageManager` field for pnpm version pinning
+
+## Workflow Architecture
+
+### CI Pipeline (`ci.yml`)
+
+```
+install (pnpm install + cache pnpm store)
+    ├── audit (pnpm audit --audit-level moderate) [parallel, no dep]
+    ├── format (biome format --write . && git diff --exit-code) [needs: install]
+    ├── lint (biome check .) [needs: install]
+    └── typecheck (tsc --noEmit -p tsconfig.typecheck.json) [needs: install]
+            └── build (pnpm build → upload artifacts) [needs: lint, typecheck]
+                    ├── test (matrix: [20, 22], download artifacts) [needs: build]
+                    └── coverage (download artifacts → pnpm test:coverage → upload reports → post summary) [needs: build]
+
+all-checks (needs: audit, format, lint, typecheck, build, test, coverage) [if: always()]
+```
+
+### Release Pipeline (`release.yml`)
+
+```
+release:
+  permissions: [contents:write, pull-requests:write, id-token:write, packages:write]
+  steps:
+    checkout → pnpm → node → install → build
+    → changesets/action@v1 (publish/release, version/version-packages)
+       env: GITHUB_TOKEN, NPM_TOKEN, NPM_CONFIG_PROVENANCE=true
+    → Mirror to GitHub Packages:
+       @reaatech:registry=https://npm.pkg.github.com
+       strips @reaatech/confidence-router- prefix → packages/{dir}
+```
+
+## CI Job Matrix
+
+| Job | Needs | Purpose |
+|-----|-------|---------|
+| `install` | — | Install deps, cache pnpm store |
+| `audit` | — | Security vulnerability scan |
+| `format` | install | Biome format check |
+| `lint` | install | Biome lint check |
+| `typecheck` | install | Cross-package type checking |
+| `build` | lint, typecheck | Build all packages, upload artifacts |
+| `test` | build | Matrix: Node 20 + 22, download build artifacts |
+| `coverage` | build | Coverage report, upload + post summary |
+| `all-checks` | all above | Gate checker for branch protection |
+
+## Secrets Configuration
+
+| Secret | Purpose | Set In |
+|--------|---------|--------|
+| `NPM_TOKEN` | Publish to npmjs.org | GitHub repo secrets |
+| `GITHUB_TOKEN` | Publish to GitHub Packages (auto-provisioned) | Workflow `permissions:` |
+
+## Package Manager & Engine Requirements
+
+```json
+// root package.json
+{
+  "engines": { "node": ">=22.0.0" },
+  "packageManager": "pnpm@10.33.0"
+}
+```
+
+## npm Publishing Checklist
+
+Before first publish:
+- [ ] `NPM_TOKEN` set in GitHub repo secrets
+- [ ] GitHub Actions permissions: Read and write + allow PR creation
+- [ ] `.changeset/config.json` has `access: public` + correct repo
+- [ ] All packages have `publishConfig.access: "public"`
+- [ ] Root `package.json` is `private: true`
+- [ ] All examples are `private: true`
+- [ ] Per-package `LICENSE` files exist
+- [ ] Release workflow starts with `workflow_dispatch` only (first publish)
+
+After first manual publish:
+- [ ] Add `push: branches: [main]` trigger to release.yml
+- [ ] Verify all packages return 200 from npm registry
+- [ ] Verify GitHub Packages mirror
 
 ## Dependencies
-- Project Setup Agent (for CI/CD foundation)
-- Testing Agent (for quality gates)
 
-## Configuration
-
-### CI/CD Configuration
-```typescript
-interface CICDConfig {
-  platform: 'github-actions';
-  branches: {
-    main: DeploymentConfig;
-    develop: DeploymentConfig;
-    feature: DeploymentConfig;
-  };
-  qualityGates: QualityGateConfig[];
-}
-```
-
-### Deployment Configuration
-```typescript
-interface DeploymentConfig {
-  autoDeploy: boolean;
-  healthChecks: HealthCheckConfig[];
-}
-```
-
-## Examples
-
-### GitHub Actions Workflow
-```yaml
-# .github/workflows/ci.yml
-name: CI
-
-on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-      
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      
-      - name: Lint
-        run: pnpm lint
-      
-      - name: Type check
-        run: pnpm typecheck
-      
-      - name: Test
-        run: pnpm test -- --coverage
-      
-      - name: Build
-        run: pnpm build
-```
-
-### Dockerfile (for examples/demo)
-```dockerfile
-# Dockerfile
-FROM node:20-alpine AS builder
-
-WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
-RUN npm install -g pnpm && pnpm install --frozen-lockfile
-
-COPY . .
-RUN pnpm build
-
-FROM node:20-alpine AS runtime
-
-WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
-RUN npm install -g pnpm && pnpm install --production --frozen-lockfile
-
-COPY --from=builder /app/dist ./dist
-
-USER node
-EXPOSE 3000
-
-CMD ["node", "dist/index.js"]
-```
-
-## Output Artifacts
-
-### CI/CD Scripts
-- `.github/workflows/ci.yml` — test, lint, typecheck, build
-- `.github/workflows/release.yml` — automated npm publishing on tag
-
-### Deployment Scripts
-```bash
-#!/bin/bash
-# scripts/publish.sh
-
-set -e
-
-VERSION=$(node -p "require('./package.json').version")
-echo "Publishing version $VERSION"
-
-pnpm build
-pnpm publish --access public
-```
-
-## Quality Standards
-
-### Deployment Quality
-- Automated testing on every PR
-- Type checking before merge
-- Linting and formatting enforcement
-- Build verification
-
-### Infrastructure Quality
-- Simple, reproducible builds
-- Minimal container images
-- Clear environment separation
-
-## Error Handling
-
-### DevOps Errors
-```typescript
-enum DevOpsError {
-  DEPLOYMENT_FAILED = 'DEPLOYMENT_FAILED',
-  BUILD_FAILED = 'BUILD_FAILED',
-  PUBLISH_FAILED = 'PUBLISH_FAILED'
-}
-```
-
-### Recovery Strategies
-- Automated retry for flaky tests
-- Build artifact preservation
-- Rollback to previous npm version on failure
-
-## Security Considerations
-
-### Security Measures
-- Secret management via GitHub Secrets
-- Dependency scanning (Dependabot)
-- Code scanning
-
-## Integration Points
-
-### With Other Agents
-- **Testing Agent**: Integrate quality gates
-- **Documentation Agent**: Document release process
-- **Core Engine Agent**: Monitor build performance
-
-### External Services
-- GitHub Actions
-- npm registry
-- Docker Hub (optional)
-
-## Maintenance
-
-### Regular Updates
-- Monthly dependency updates
-- Quarterly CI action version updates
-
-### Monitoring
-- Build times
-- Test execution times
-- Dependency health
-
-## Support
-
-### Operational Resources
-- Release runbook
-- CI/CD troubleshooting guide
+- Project Setup Agent (for initial monorepo structure)
+- Testing Agent (for CI test configuration)
 
 ---
 
-**Agent Version**: 1.0.0  
-**Last Updated**: 2026-04-22  
+**Agent Version**: 2.0.0
+**Last Updated**: 2026-04-30
 **Status**: Active
