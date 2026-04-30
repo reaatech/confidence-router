@@ -1,0 +1,49 @@
+{
+  "name": "@reaatech/confidence-router",
+  "version": "0.1.0",
+  "description": "Decision engine for route/clarify/fallback patterns",
+  "license": "MIT",
+  "author": "Rick Somers <rick@reaatech.com> (https://reaatech.com)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/reaatech/confidence-router.git",
+    "directory": "packages/confidence-router"
+  },
+  "homepage": "https://github.com/reaatech/confidence-router/tree/main/packages/confidence-router#readme",
+  "bugs": {
+    "url": "https://github.com/reaatech/confidence-router/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@reaatech/confidence-router-classifiers": "workspace:*",
+    "@reaatech/confidence-router-core": "workspace:*",
+    "@reaatech/confidence-router-evaluation": "workspace:*",
+    "@reaatech/confidence-router-languages": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1"
+  }
+}

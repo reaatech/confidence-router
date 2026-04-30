@@ -6,12 +6,21 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Stale build output in src/ (tsup misconfiguration)
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map
+
 # Test output
 coverage/
 
 # Environment
 .env
 .env.local
+
+# Turbo cache
+.turbo/
 
 # IDE
 .claude
