@@ -1,306 +1,169 @@
 # Core Engine Agent
 
 ## Purpose
-Implement the decision engine and routing logic that forms the heart of the confidence-router system, including threshold comparison, decision tree evaluation, and routing algorithms.
+Implement the decision engine, routing logic, type system, and configuration management in `@reaatech/confidence-router-core`. This is the foundation package — all other packages depend on it.
 
 ## Capabilities
 
 ### Decision Engine Implementation
-- Implement core routing logic with configurable thresholds
-- Create threshold comparison engine
-- Build decision tree evaluation system
-- Implement routing decision algorithms (ROUTE, CLARIFY, FALLBACK)
+- Implement `DecisionEngine` class with threshold evaluation
+- Create threshold comparison logic: `score >= route → ROUTE`, `score < fallback → FALLBACK`, otherwise `CLARIFY`
+- Validate classification inputs (non-empty predictions, confidence in [0,1])
+- Return typed `RoutingDecision` objects
 
 ### Type System Design
-- Define ClassificationResult interface
-- Define RoutingDecision types
-- Define ThresholdConfig interface
-- Define Prediction and Confidence types
+- Define all public interfaces: `Prediction`, `ClassificationResult`, `RoutingDecision`, `RouterConfig`
+- Create DI interfaces: `RouterInterface`, `ClassifierRegistryInterface`, `LanguageManagerInterface`, `PromptGeneratorInterface`, `ConfidenceRouterDeps`
+- Define error hierarchy: `RouterError` class + `RouterErrorType` enum (6 variants)
 
 ### Configuration System
-- Implement configuration loader and validator
-- Create configuration schema validation
-- Support environment variable overrides
-- Implement configuration hot-reloading
+- Implement `DEFAULT_CONFIG` with sensible defaults (routeThreshold: 0.8, fallbackThreshold: 0.3)
+- Create `validateConfig()` to enforce `fallbackThreshold < routeThreshold` and [0,1] bounds
+- Create `mergeConfig()` for partial configuration merging
 
-### Decision Flow Implementation
-```typescript
-// Core decision logic
-interface DecisionEngine {
-  decide(classification: ClassificationResult): Promise<RoutingDecision>;
-  evaluateThresholds(score: number): DecisionType;
-  generateClarification(decision: ClarifyDecision): Promise<string>;
-}
+### Package Architecture
+
 ```
-
-### Error Handling
-- Implement comprehensive error types
-- Create error recovery mechanisms
-- Add validation for all inputs
-- Implement graceful degradation
+packages/core/
+├── src/
+│   ├── types/
+│   │   ├── index.ts      # All type definitions + DI interfaces
+│   │   └── errors.ts     # RouterError class
+│   ├── config/
+│   │   └── index.ts      # DEFAULT_CONFIG, validateConfig, mergeConfig
+│   ├── DecisionEngine.ts # Core threshold evaluation engine
+│   └── index.ts          # Barrel export
+├── tests/                # Unit tests
+├── package.json          # @reaatech/confidence-router-core
+├── tsconfig.json
+├── tsup.config.ts
+└── vitest.config.ts
+```
 
 ## Triggers
 - Core functionality development
 - Algorithm implementation
-- Performance optimization
-- Bug fixes in decision logic
+- Adding new types or interfaces
+- Configuration system changes
 
 ## Dependencies
-- Project Setup Agent (for project structure)
+- Project Setup Agent (for package scaffolding)
 - Testing Agent (for test implementation)
 
 ## Configuration
 
-### Threshold Configuration
+### Default Thresholds
 ```typescript
-interface ThresholdConfig {
-  routeThreshold: number;        // 0.8 = 80% confidence to route
-  fallbackThreshold: number;     // 0.3 = 30% confidence to fallback
-  clarificationEnabled: boolean; // Enable clarification decisions
-  clarificationMinScore: number; // Minimum score for clarification
-  clarificationMaxOptions: number; // Max options to show
-}
+const DEFAULT_CONFIG: RouterConfig = {
+  routeThreshold: 0.8,
+  fallbackThreshold: 0.3,
+  clarificationEnabled: true,
+  clarificationLanguages: ['en'],
+  maxClarificationOptions: 3,
+};
 ```
 
-### Decision Configuration
+### Error Types
 ```typescript
-interface DecisionConfig {
-  strategy: 'strict' | 'balanced' | 'lenient';
-  fallbackBehavior: 'default' | 'error' | 'retry';
-  clarificationBehavior: 'always' | 'when-unsure' | 'never';
-  maxDecisionTime: number; // milliseconds
+enum RouterErrorType {
+  CONFIGURATION_ERROR = 'CONFIGURATION_ERROR',
+  CLASSIFICATION_ERROR = 'CLASSIFICATION_ERROR',
+  LANGUAGE_NOT_SUPPORTED = 'LANGUAGE_NOT_SUPPORTED',
+  THRESHOLD_INVALID = 'THRESHOLD_INVALID',
+  CLASSIFIER_NOT_FOUND = 'CLASSIFIER_NOT_FOUND',
+  DATASET_INVALID = 'DATASET_INVALID',
 }
 ```
 
 ## Examples
 
-### Basic Decision Engine
+### DecisionEngine
 ```typescript
-class ConfidenceRouter {
-  private config: RouterConfig;
-  
-  constructor(config: RouterConfig) {
-    this.config = config;
-  }
-  
-  async decide(classification: ClassificationResult): Promise<RoutingDecision> {
-    const topPrediction = classification.predictions[0];
-    const decisionType = this.evaluateThresholds(topPrediction.confidence);
-    
-    switch (decisionType) {
-      case 'ROUTE':
-        return this.createRouteDecision(topPrediction);
-      case 'CLARIFY':
-        return this.createClarifyDecision(classification);
-      case 'FALLBACK':
-        return this.createFallbackDecision();
-    }
-  }
-  
-  private evaluateThresholds(score: number): DecisionType {
-    const { routeThreshold, fallbackThreshold } = this.config.thresholds;
-    
-    if (score >= routeThreshold) {
-      return 'ROUTE';
-    } else if (score < fallbackThreshold) {
-      return 'FALLBACK';
-    } else {
-      return 'CLARIFY';
-    }
-  }
-}
+import { DecisionEngine, mergeConfig } from '@reaatech/confidence-router-core';
+
+const engine = new DecisionEngine(mergeConfig({ routeThreshold: 0.8, fallbackThreshold: 0.3 }));
+
+const decision = engine.decide({
+  predictions: [
+    { label: 'book_flight', confidence: 0.92 },
+    { label: 'check_status', confidence: 0.08 },
+  ],
+});
+// → { type: 'ROUTE', target: 'book_flight', confidence: 0.92 }
 ```
 
-### Threshold Evaluation
+### Dependency Injection Interface
 ```typescript
-// Decision tree logic
-function evaluateDecision(score: number, thresholds: ThresholdConfig): DecisionType {
-  // High confidence → Route to top match
-  if (score >= thresholds.routeThreshold) {
-    return 'ROUTE';
-  }
-  
-  // Very low confidence → Fall back to default
-  if (score < thresholds.fallbackThreshold) {
-    return 'FALLBACK';
-  }
-  
-  // Medium confidence → Ask for clarification
-  if (thresholds.clarificationEnabled) {
-    return 'CLARIFY';
-  }
-  
-  // If clarification disabled, fall back
-  return 'FALLBACK';
+import type {
+  RouterInterface,
+  ClassifierRegistryInterface,
+  ConfidenceRouterDeps,
+} from '@reaatech/confidence-router-core';
+
+// RouterInterface enables evaluation to work without importing ConfidenceRouter
+class ThresholdOptimizer {
+  constructor(private router: RouterInterface, private dataset: EvaluationDataset) {}
 }
+
+// ConfidenceRouterDeps allows swapping internal components
+const deps: ConfidenceRouterDeps = {
+  languageManager: new CustomLanguageManager(),
+  classifierRegistry: new CustomRegistry(),
+};
+```
+
+### Config Validation
+```typescript
+import { validateConfig, mergeConfig } from '@reaatech/confidence-router-core';
+
+// Throws RouterError with THRESHOLD_INVALID if fallback >= route
+validateConfig({ routeThreshold: 0.3, fallbackThreshold: 0.8 });
+
+// Throws if thresholds outside [0,1]
+validateConfig({ routeThreshold: 1.5, fallbackThreshold: 0.3 });
 ```
 
 ## Output Artifacts
 
-### Core Types
-```typescript
-// src/types/routing.ts
-export interface ClassificationResult {
-  predictions: Prediction[];
-  metadata?: ClassificationMetadata;
-}
-
-export interface Prediction {
-  label: string;
-  confidence: number;
-  metadata?: Record<string, unknown>;
-}
-
-export type DecisionType = 'ROUTE' | 'CLARIFY' | 'FALLBACK';
-
-export interface RoutingDecision {
-  type: DecisionType;
-  confidence?: number;
-  target?: string;
-  prompt?: string;
-  options?: string[];
-  metadata?: DecisionMetadata;
-}
-```
-
-### Decision Engine
-```typescript
-// src/core/DecisionEngine.ts
-export class DecisionEngine {
-  constructor(private config: RouterConfig) {}
-  
-  async process(classification: ClassificationResult): Promise<RoutingDecision> {
-    // Validate input
-    this.validate(classification);
-    
-    // Get top prediction
-    const topPrediction = this.getTopPrediction(classification);
-    
-    // Evaluate thresholds
-    const decisionType = this.evaluateThresholds(topPrediction.confidence);
-    
-    // Create appropriate decision
-    return this.createDecision(decisionType, classification, topPrediction);
-  }
-}
-```
-
-### Configuration Manager
-```typescript
-// src/config/ConfigManager.ts
-export class ConfigManager {
-  private config: RouterConfig;
-  
-  constructor(configPath?: string) {
-    this.config = this.loadConfig(configPath);
-  }
-  
-  private loadConfig(configPath?: string): RouterConfig {
-    // Load from file, environment, or defaults
-    const fileConfig = this.loadFileConfig(configPath);
-    const envConfig = this.loadEnvConfig();
-    
-    return this.mergeConfigs(fileConfig, envConfig, this.getDefaultConfig());
-  }
-}
-```
+The core package produces `dist/index.cjs` + `dist/index.js` + `dist/index.d.ts` containing all exported types, the `DecisionEngine` class, `RouterError`, and configuration utilities. It has zero runtime dependencies.
 
 ## Quality Standards
 
 ### Code Quality
-- 100% TypeScript strict mode compliance
-- Comprehensive error handling
-- Extensive input validation
-- Clear separation of concerns
+- 100% TypeScript strict mode compliance (all individual strict flags)
+- Comprehensive input validation with typed errors
+- Clear separation between types, engine, and config
 
 ### Performance
-- Decision time < 10ms
-- Memory efficient data structures
-- Optimized threshold comparisons
-- Minimal object allocations
+- Decision time < 1ms (pure CPU, no I/O)
+- Zero memory allocations beyond the returned object
+- Engine is stateless — no caching required
 
 ### Testing
-- Unit tests for all decision paths
-- Integration tests for workflows
-- Performance benchmarks
-- Edge case testing
-
-## Error Handling
-
-### Error Types
-```typescript
-enum CoreEngineError {
-  INVALID_CLASSIFICATION = 'INVALID_CLASSIFICATION',
-  THRESHOLD_ERROR = 'THRESHOLD_ERROR',
-  CONFIGURATION_ERROR = 'CONFIGURATION_ERROR',
-  DECISION_TIMEOUT = 'DECISION_TIMEOUT'
-}
-```
-
-### Recovery Strategies
-- Default threshold fallback
-- Configuration validation before use
-- Graceful degradation on errors
-- Detailed error logging
-
-## Performance Optimization
-
-### Optimization Techniques
-- Threshold caching
-- Decision result caching
-- Lazy loading of configurations
-- Efficient data structure usage
-
-### Performance Monitoring
-- Decision time tracking
-- Memory usage monitoring
-- Error rate tracking
-- Throughput measurement
+- Unit tests for all decision paths (ROUTE, CLARIFY, FALLBACK)
+- Edge cases: empty predictions, out-of-range confidence, threshold boundaries
+- Config validation: invalid ranges, inconsistent thresholds
 
 ## Integration Points
 
-### With Other Agents
-- **Multi-Language Agent**: Provides clarification prompts
-- **Classifier Agent**: Receives classification results
-- **Evaluation Agent**: Provides metrics for optimization
-- **Testing Agent**: Implements comprehensive tests
+### With Other Packages
+- **classifiers**: Depends on core for `Classifier` interface, `ClassificationResult`, `RouterError`
+- **languages**: Depends on core for `LanguageConfig`, `Prediction`, `RouterError`
+- **evaluation**: Depends on core for `RouterInterface`, `EvaluationDataset`, `EvaluationMetrics`
+- **confidence-router**: Depends on core for all types + DI interfaces + DecisionEngine
 
-### External Systems
-- Configuration files (JSON, YAML)
-- Environment variables
-- External classifiers
-- Monitoring systems
-
-## Maintenance
-
-### Code Maintenance
-- Regular refactoring
-- Performance optimization
-- Security updates
-- Documentation updates
-
-### Monitoring
-- Decision accuracy
-- Performance metrics
-- Error rates
-- Resource usage
-
-## Support
-
-### Documentation
-- API documentation
-- Configuration guides
-- Troubleshooting guides
-- Performance tuning guides
-
-### Community
-- GitHub Issues for bugs
-- GitHub Discussions for questions
-- Contributing guidelines
-- Code examples
+### Package Dependency
+```
+core (leaf — zero internal deps)
+  ↑
+  ├── classifiers
+  ├── languages
+  ├── evaluation
+  └── confidence-router (depends on all above)
+```
 
 ---
 
-**Agent Version**: 1.0.0  
-**Last Updated**: 2026-04-22  
+**Agent Version**: 2.0.0
+**Last Updated**: 2026-04-30
 **Status**: Active

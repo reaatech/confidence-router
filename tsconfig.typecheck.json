@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@reaatech/confidence-router-core": ["./packages/core/src/index.ts"],
+      "@reaatech/confidence-router-classifiers": ["./packages/classifiers/src/index.ts"],
+      "@reaatech/confidence-router-languages": ["./packages/languages/src/index.ts"],
+      "@reaatech/confidence-router-evaluation": ["./packages/evaluation/src/index.ts"],
+      "@reaatech/confidence-router": ["./packages/confidence-router/src/index.ts"]
+    }
+  }
+}

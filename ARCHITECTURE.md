@@ -4,526 +4,390 @@
 
 Confidence Router is a decision engine that processes classification results with confidence scores and determines the appropriate routing action: route to the top match, request clarification, or fall back to a default handler.
 
-## High-Level Architecture
+The project is organized as a **pnpm-based TypeScript monorepo** with 5 publishable packages under the `@reaatech` scope, following a one-way dependency graph with no cycles.
+
+## Monorepo Architecture
 
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Classifier    │───▶│  Decision Engine │───▶│ Routing Decision│
-│   (Pluggable)   │    │   (Core Logic)   │    │   (Output)      │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│ Confidence      │    │  Configuration   │    │ Response        │
-│ Scores          │    │  (Thresholds)    │    │ Formatter       │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
+packages/
+├── core/               @reaatech/confidence-router-core
+│   Types, errors, config, DecisionEngine, DI interfaces
+│   Leaf package — zero internal deps
+│
+├── classifiers/        @reaatech/confidence-router-classifiers
+│   ClassifierRegistry, Keyword/Embedding/LLM classifiers
+│   Depends on: core
+│
+├── languages/          @reaatech/confidence-router-languages
+│   LanguageManager, PromptGenerator, 47 locale configs
+│   Depends on: core
+│
+├── evaluation/         @reaatech/confidence-router-evaluation
+│   ThresholdOptimizer (uses RouterInterface from core)
+│   Depends on: core
+│
+└── confidence-router/  @reaatech/confidence-router
+    ConfidenceRouter (DI-refactored), RouterFactory, barrel exports
+    Depends on: core, classifiers, languages, evaluation
 ```
+
+### Package Dependency Graph
+
+```
+         ┌──────────┐
+         │   core   │  (types, errors, config, DecisionEngine)
+         └────┬─────┘
+    ┌─────────┼─────────┐
+    ▼         ▼         ▼
+┌──────┐ ┌──────┐ ┌───────────┐
+│class │ │lang  │ │evaluation │
+└──┬───┘ └──┬───┘ └─────┬─────┘
+   │        │            │
+   └────────┼────────────┘
+            ▼
+       ┌─────────────┐
+       │ confidence-  │  (main barrel — wires all sub-packages)
+       │ router       │
+       └─────────────┘
+```
+
+All edges flow one way (top-down). No package depends on `confidence-router`, which is the final aggregation point. Consumers install `@reaatech/confidence-router` for the full experience, or individual sub-packages for tree-shaking.
 
 ## Core Components
 
-### 1. Decision Engine
+### 1. `@reaatech/confidence-router-core` — Foundation
 
-The heart of the system, responsible for evaluating confidence scores against configurable thresholds.
+The leaf package containing all shared types, error classes, configuration utilities, and the `DecisionEngine`. Every other package depends on it.
 
-#### Decision Tree Logic
+#### Exports
+
+| Category | Items |
+|----------|-------|
+| Types | `Prediction`, `ClassificationResult`, `RoutingDecision`, `DecisionType`, `RouterConfig`, `Classifier`, `LanguageConfig`, `EvaluationDataset`, `EvaluationMetrics`, and more |
+| Errors | `RouterError` class with `RouterErrorType` enum (6 variants) |
+| Config | `DEFAULT_CONFIG`, `validateConfig()`, `mergeConfig()` |
+| Engine | `DecisionEngine` — pure-function threshold evaluator |
+| DI interfaces | `RouterInterface`, `ClassifierRegistryInterface`, `LanguageManagerInterface`, `PromptGeneratorInterface`, `ConfidenceRouterDeps` |
+
+#### Decision Logic
 
 ```
-                    ┌─────────────────┐
-                    │ Classification  │
-                    │     Result      │
-                    └────────┬────────┘
-                             │
-                    ┌────────▼────────┐
-                    │ Top Confidence  │
-                    │     Score       │
-                    └────────┬────────┘
-                             │
-                ┌─────────────┼─────────────┐
-                │             │             │
-    ┌───────────▼──┐ ┌────────▼────────┐ ┌─▼────────────┐
-    │ Score >=     │ │ Score in        │ │ Score <      │
-    │ Route        │ │ Clarification   │ │ Fallback     │
-    │ Threshold    │ │ Range           │ │ Threshold    │
-    └───────────┬──┘ └────────┬────────┘ └─┬────────────┘
-                │             │             │
-    ┌───────────▼──┐ ┌────────▼────────┐ ┌─▼────────────┐
-    │ ROUTE        │ │ CLARIFY       │ │ FALLBACK     │
-    │ to top match │ │ ask user      │ │ to default   │
-    └──────────────┘ └───────────────┘ └──────────────┘
+score >= routeThreshold    →  ROUTE
+score <  fallbackThreshold →  FALLBACK
+otherwise (clarify enabled) →  CLARIFY
+otherwise                   →  FALLBACK
 ```
 
-#### Decision Flow Diagram
+The `DecisionEngine` is a stateless evaluator: receive a `ClassificationResult`, return a `RoutingDecision`. It performs full validation — empty predictions arrays, out-of-range confidence values, and missing labels all throw typed `RouterError` instances.
 
-```mermaid
-graph TD
-    A[Classification Result] --> B{Evaluate Top Score}
-    B -->|score >= routeThreshold| C[ROUTE: Top Match]
-    B -->|fallbackThreshold <= score < routeThreshold| D{Check Clarification}
-    B -->|score < fallbackThreshold| E[FALLBACK: Default]
-    
-    D -->|clarification enabled| F[CLARIFY: Generate Prompt]
-    D -->|clarification disabled| E
-    
-    F --> G[Multi-language Prompt]
-    G --> H[Return Clarification Options]
-    
-    C --> I[Return Route Decision]
-    E --> J[Return Fallback Decision]
-    H --> K[Return Clarify Decision]
-```
+### 2. `@reaatech/confidence-router-classifiers` — Pluggable Classifiers
 
-### 2. Configuration System
+Three built-in classifiers and a registry for fallback chain execution.
 
-Manages all configurable parameters for the routing system.
+| Classifier | Type | Approach |
+|------------|------|----------|
+| `KeywordClassifier` | Deterministic | Pattern matching (substring, exact, regex) with weighted scoring |
+| `EmbeddingSimilarityClassifier` | Vector | Cosine similarity between input and reference embeddings |
+| `LLMClassifier` | LLM API | OpenAI or Anthropic chat completions with JSON structured output |
 
-#### Configuration Structure
-
-```typescript
-interface RouterConfig {
-  // Thresholds
-  routeThreshold: number;        // Score >= routeThreshold → ROUTE
-  fallbackThreshold: number;     // Score < fallbackThreshold → FALLBACK
-  clarificationEnabled: boolean; // Enable/disable clarification
-  
-  // Clarification settings
-  clarificationLanguages: string[]; // ISO 639-1 codes
-  clarificationPromptTemplate?: string;
-  maxClarificationOptions?: number;
-  
-  // Classifier settings
-  defaultClassifier: string;
-  // Fallback settings
-  fallbackHandler?: FallbackHandler;
-  
-  // Evaluation settings
-  evalMode?: boolean;
-  metricsCollector?: MetricsCollector;
-}
-```
-
-### 3. Pluggable Classifier System
-
-Supports multiple classifier types with a unified interface.
-
-#### Classifier Interface
+All classifiers implement the `Classifier` interface from core:
 
 ```typescript
 interface Classifier {
   name: string;
-  type: 'llm' | 'embedding' | 'keyword' | 'custom';
-  
-  classify(input: string, context?: any): Promise<ClassificationResult>;
-  validate(): Promise<boolean>;
-  getMetrics(): ClassifierMetrics;
-}
-
-interface ClassificationResult {
-  predictions: Prediction[];
-  metadata?: {
-    model?: string;
-    latency?: number;
-    tokens?: number;
-  } & Record<string, unknown>;
-}
-
-interface Prediction {
-  label: string;
-  confidence: number;
-  metadata?: Record<string, unknown>;
+  type: string;
+  enabled: boolean;
+  priority: number;
+  classify(input: string, context?: Record<string, unknown>): Promise<ClassificationResult>;
+  validate?(): Promise<boolean>;
 }
 ```
 
-#### Built-in Classifiers
+The `ClassifierRegistry` provides:
+- **Named registration** — classifiers are keyed by name, first enabled one is default
+- **Fallback chains** — tries each classifier in priority order until one succeeds
+- **Typed error propagation** — if all fail, a `RouterError` with `CLASSIFIER_NOT_FOUND` code surfaces the full chain of failures
 
-1. **LLM Classifier**
-   - Uses OpenAI/Anthropic APIs
-   - Returns structured predictions with confidence scores
-   - Supports few-shot learning
+### 3. `@reaatech/confidence-router-languages` — Multi-Language Support
 
-2. **Embedding Similarity Classifier**
-   - Vector-based similarity matching
-   - Uses cosine similarity for confidence calculation
-   - Supports multiple embedding models
+47 built-in locale configurations (Afrikaans to Zulu) with localized clarification prompt templates and formatting conventions.
 
-3. **Keyword Classifier**
-   - Pattern matching approach
-   - Rule-based confidence scoring
-   - Fast and deterministic
+| Component | Role |
+|-----------|------|
+| `LanguageManager` | Registry of `LanguageConfig` objects, English fallback, custom language support |
+| `PromptGenerator` | Formats `{options}` template strings with locale-aware separators, conjunctions, and RTL handling |
+| `configs/*.ts` | 47 static config files, each exporting a `LanguageConfig` |
 
-### 4. Multi-Language Support System
+Each `LanguageConfig` includes:
+- ISO 639-1 code, native name, direction (`ltr` / `rtl`)
+- Clarification templates with `{options}` placeholder
+- Locale-specific list separators (`", "` vs `"、"`) and conjunctions (`"or"` vs `"还是"`)
 
-Provides clarification prompts in 45+ languages.
+### 4. `@reaatech/confidence-router-evaluation` — Threshold Optimization
 
-#### Language Configuration
+`ThresholdOptimizer` performs grid search across threshold combinations to maximize F1 score against labeled datasets.
 
 ```typescript
-interface LanguageConfig {
-  code: string; // ISO 639-1
-  name: string;
-  clarificationTemplates: {
-    basic: string;
-    detailed: string;
-    options: string;
-  };
-  formatting: {
-    listSeparator: string;
-    questionEnding: string;
-    politeForm: boolean;
-  };
+class ThresholdOptimizer {
+  constructor(router: RouterInterface, dataset: EvaluationDataset);
+  evaluateWithCurrentThresholds(): EvaluationMetrics;
+  gridSearch(routeThresholds?, fallbackThresholds?): OptimizedThresholds;
 }
 ```
 
-#### Supported Languages (45+)
+Key design: accepts a `RouterInterface` (from core), not a concrete `ConfidenceRouter`. This decouples evaluation from the barrel package. Any object implementing `decide()`, `getConfig()`, and `updateConfig()` is valid.
 
-- **Major Languages**: English, Spanish, French, German, Italian, Portuguese, Dutch, Russian, Japanese, Korean, Chinese (Simplified & Traditional), Arabic
-- **European Languages**: Polish, Swedish, Norwegian, Danish, Finnish, Czech, Slovak, Hungarian, Romanian, Bulgarian, Croatian, Serbian, Slovenian, Greek, Turkish
-- **Asian Languages**: Hindi, Bengali, Tamil, Telugu, Marathi, Gujarati, Kannada, Malayalam, Thai, Vietnamese, Indonesian, Malay, Filipino
-- **Other Languages**: Hebrew, Persian, Urdu, Swahili, Afrikaans
+The optimizer:
+1. Iterates route/fallback threshold combinations (default: 10 × 9 grid)
+2. Skips invalid pairs (`fallback >= route`)
+3. Scores each combination by F1
+4. Always restores original thresholds (even on error)
 
-### 5. Evaluation Harness
+When evaluation examples lack `predictions`, synthetic deterministic scores are generated from the input string hash — ensuring grid search has meaningful variation even with raw labeled data.
 
-Provides tools for tuning thresholds and measuring performance.
+### 5. `@reaatech/confidence-router` — Main Barrel
 
-#### Evaluation Components
+The entry point most consumers install. Bundles all sub-packages and wires them with sensible defaults.
 
-```typescript
-interface EvaluationDataset {
-  examples: LabeledExample[];
-  metadata: DatasetMetadata;
-}
-
-interface LabeledExample {
-  input: string;
-  expectedLabel: string;
-  expectedConfidence?: number;
-  context?: Record<string, unknown>;
-}
-
-interface EvaluationMetrics {
-  accuracy: number;
-  precision: number;
-  recall: number;
-  f1Score: number;
-  confusionMatrix: ConfusionMatrix;
-  thresholdAnalysis: ThresholdAnalysis;
-}
-```
-
-#### Optimization Workflow
-
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│ Labeled Dataset │───▶│ Threshold Grid   │───▶│ Performance     │
-│                 │    │ Search           │    │ Metrics         │
-└─────────────────┘    └──────────────────┘    └────────┬────────┘
-                                                        │
-                                                        ▼
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│ Optimal         │◀───│ Cross-Validation │◀───│ Threshold       │
-│ Thresholds      │    │                  │    │ Candidates      │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-```
-
-## Data Flow
-
-### 1. Routing Decision Flow
-
-```typescript
-// Input
-const classificationResult: ClassificationResult = {
-  predictions: [
-    { label: 'intent_a', confidence: 0.85 },
-    { label: 'intent_b', confidence: 0.12 },
-    { label: 'intent_c', confidence: 0.03 }
-  ]
-};
-
-// Processing
-const decision = await router.decide(classificationResult);
-
-// Output
-if (decision.type === 'ROUTE') {
-  // decision.target = 'intent_a'
-} else if (decision.type === 'CLARIFY') {
-  // decision.prompt = "Did you mean: intent_a or intent_b?"
-  // decision.options = ['intent_a', 'intent_b']
-} else if (decision.type === 'FALLBACK') {
-  // decision.handler = defaultFallbackHandler
-}
-```
-
-### 2. Clarification Generation Flow
-
-```
-Classification Result
-        │
-        ▼
-┌──────────────────┐
-│ Get Top N        │
-│ Predictions      │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ Filter by        │
-│ Confidence       │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ Select Language  │
-│ Template         │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ Generate         │
-│ Localized Prompt │
-└──────────────────┘
-```
-
-## API Design
-
-### Main Router Class
+#### ConfidenceRouter
 
 ```typescript
 class ConfidenceRouter {
-  constructor(config: RouterConfig);
-  
-  // Core routing method
-  decide(classification: ClassificationResult): Promise<RoutingDecision>;
-  
-  // Batch processing
-  decideBatch(classifications: ClassificationResult[]): Promise<RoutingDecision[]>;
-  
-  // Configuration management
+  constructor(config?: Partial<RouterConfig>, deps?: ConfidenceRouterDeps);
+
+  // Decision methods
+  decide(classification: ClassificationResult): RoutingDecision;
+  decideBatch(classifications: ClassificationResult[]): RoutingDecision[];
+
+  // Classification methods
+  classify(input: string, classifierName?, context?): Promise<ClassificationResult>;
+  process(input: string, classifierName?): Promise<RoutingDecision>;
+  classifyWithFallback(input: string): Promise<ClassificationResult>;
+
+  // Configuration
   updateConfig(config: Partial<RouterConfig>): void;
   getConfig(): RouterConfig;
-  
-  // Evaluation methods
-  evaluate(dataset: EvaluationDataset): Promise<EvaluationMetrics>;
-  optimizeThresholds(dataset: EvaluationDataset): Promise<OptimizedThresholds>;
-  
+
   // Classifier management
   registerClassifier(classifier: Classifier): void;
-  getClassifier(name: string): Classifier;
+  getClassifier(name: string): Classifier | undefined;
+
+  // Evaluation
+  evaluate(dataset: EvaluationDataset): EvaluationMetrics;
+  optimizeThresholds(dataset: EvaluationDataset, routeThresholds?, fallbackThresholds?): OptimizedThresholds;
 }
 ```
 
-### Factory Pattern
+#### Dependency Injection
+
+The constructor accepts optional `ConfidenceRouterDeps` to override any internal component:
 
 ```typescript
-class RouterFactory {
-  static create(config: RouterConfig): ConfidenceRouter;
-  static createWithDefaults(): ConfidenceRouter;
+interface ConfidenceRouterDeps {
+  languageManager?: LanguageManagerInterface;
+  promptGenerator?: PromptGeneratorInterface;
+  classifierRegistry?: ClassifierRegistryInterface;
 }
 ```
+
+When omitted, defaults wire concrete implementations from the sub-packages. This enables:
+- Swapping language backends without touching classifier logic
+- Injecting mocks for testing
+- Replacing individual components in production without forking
+
+#### RouterFactory
+
+```typescript
+const router = RouterFactory.create({ routeThreshold: 0.9 });
+const defaultRouter = RouterFactory.createWithDefaults();
+```
+
+A thin factory wrapping `new ConfidenceRouter(...)`.
+
+## Data Flow
+
+### Routing Decision Flow
+
+```
+Input Text
+    │
+    ▼
+┌─────────────┐
+│ Classifier   │  → ClassificationResult { predictions: [...] }
+└──────┬──────┘
+       │
+       ▼
+┌──────────────┐
+│ DecisionEngine│ → threshold evaluation on top prediction
+└──────┬───────┘
+       │
+       ▼
+┌──────────────────────────────────────────┐
+│  ROUTE      │   CLARIFY     │   FALLBACK │
+│  score≥0.8  │   0.3≤x<0.8  │   score<0.3│
+└─────────────┴───────────────┴────────────┘
+                            │
+                    ┌───────▼───────┐
+                    │ PromptGenerator│ → localized clarification prompt
+                    └───────────────┘
+```
+
+### Clarification Prompt Flow
+
+```
+ClassificationResult
+    │
+    ▼
+Top N predictions (default: 3) sorted by confidence
+    │
+    ▼
+LanguageManager.getLanguage(locale) → LanguageConfig
+    │
+    ▼
+PromptGenerator.formatOptions(predictions, language)
+    ├── Uses locale-specific listSeparator ("," vs "、")
+    ├── Uses locale-specific conjunction ("or" vs "还是")
+    └── Handles RTL direction for Arabic, Hebrew, Persian, Urdu
+    │
+    ▼
+Template interpolation: "Did you mean: {options}?"
+    └── returns localized prompt string
+```
+
+## Monorepo Toolchain
+
+### Build Pipeline
+
+```
+pnpm build → turbo run build
+                  │
+      ┌───────────┼───────────┐
+      ▼           ▼           ▼
+   core:build  → class:build → router:build
+              → lang:build
+              → eval:build
+```
+
+turbo orchestrates topological builds: core first (leaf), then classifiers/languages/evaluation in parallel (all depend on core), then confidence-router last (depends on all). Output is `dist/index.js` (ESM) + `dist/index.cjs` (CJS) + `dist/index.d.ts` (types) per package.
+
+### Testing
+
+```
+pnpm test → turbo run test → vitest run per package
+```
+
+Tests live in `packages/*/tests/`. Each package has its own `vitest.config.ts` with coverage reporting. Cross-package test dependencies are declared as `devDependencies` via `workspace:*`.
+
+### Linting & Type Checking
+
+- **Biome**: Single binary for lint + format (replaces ESLint + Prettier). Config in `biome.json`.
+- **Types**: `tsconfig.typecheck.json` uses path aliases to resolve `@reaatech/confidence-router-*` to `packages/*/src/index.ts`, enabling cross-package typecheck without building first.
 
 ## Error Handling Strategy
 
-### Error Types
+### Error Hierarchy
 
-```typescript
-enum RouterErrorType {
-  CONFIGURATION_ERROR = 'CONFIGURATION_ERROR',
-  CLASSIFICATION_ERROR = 'CLASSIFICATION_ERROR',
-  LANGUAGE_NOT_SUPPORTED = 'LANGUAGE_NOT_SUPPORTED',
-  THRESHOLD_INVALID = 'THRESHOLD_INVALID',
-  CLASSIFIER_NOT_FOUND = 'CLASSIFIER_NOT_FOUND'
-}
-
-class RouterError extends Error {
-  type: RouterErrorType;
-  code: string;
-  details?: Record<string, unknown>;
-}
+```
+RouterError (extends Error)
+  ├── RouterErrorType.CONFIGURATION_ERROR
+  ├── RouterErrorType.CLASSIFICATION_ERROR
+  ├── RouterErrorType.LANGUAGE_NOT_SUPPORTED
+  ├── RouterErrorType.THRESHOLD_INVALID
+  ├── RouterErrorType.CLASSIFIER_NOT_FOUND
+  └── RouterErrorType.DATASET_INVALID
 ```
 
-### Threshold Validation
-
-The router validates threshold configuration on initialization to ensure logical consistency:
-
-```typescript
-// Validation: must maintain fallback < route
-if (config.fallbackThreshold >= config.routeThreshold) {
-  throw new RouterError(
-    RouterErrorType.THRESHOLD_INVALID,
-    'fallbackThreshold must be strictly less than routeThreshold'
-  );
-}
-```
+All errors carry `type: RouterErrorType`, `message: string`, and optional `details?: Record<string, unknown>`.
 
 ### Error Recovery
 
-1. **Configuration Errors**: Fall back to default configuration
-2. **Classifier Errors**: Use fallback classifier or default handler
-3. **Language Errors**: Fall back to English prompts
-4. **Threshold Errors**: Use safe default thresholds
+| Scenario | Recovery |
+|----------|----------|
+| Unsupported language code | Falls back to English (`"en"`) |
+| Invalid classifier output | `RouterError` with descriptive message |
+| All classifiers fail (fallback chain) | `RouterError` with `{ attempts: [...failures] }` |
+| Invalid configuration thresholds | Throws on construction, must be fixed before use |
+
+## Release Pipeline
+
+```
+GitHub Actions release.yml
+    │
+    ▼
+changesets/action@v1
+    ├── No pending changesets → Publish
+    └── Pending changesets → Open "Version Packages" PR
+                           │
+                           ▼
+                    Merge PR → Publish to npm + mirror to GitHub Packages
+```
+
+- **npm**: Published via `NPM_TOKEN` secret to `registry.npmjs.org`
+- **GitHub Packages**: Mirrored via `GITHUB_TOKEN` to `npm.pkg.github.com`
+- **Provenance**: Enabled via `NPM_CONFIG_PROVENANCE: 'true'`
 
 ## Performance Considerations
 
-### Optimization Strategies
+| Target | Value |
+|--------|-------|
+| Decision time (core engine) | < 1ms per evaluation |
+| Keyword classifier | < 1ms per classification |
+| Embedding classifier | < 10ms (depends on provider) |
+| LLM classifier | API-dependent (500ms–2s) |
+| Bundle size (per package) | < 20KB gzipped |
+| Language loading | < 10ms for 47-locale init |
 
-1. **Caching**: Cache classification results and decisions
-2. **Batching**: Support batch processing for efficiency
-3. **Lazy Loading**: Load language packs on demand
-4. **Connection Pooling**: Reuse classifier connections
+## Package Dependency Rules
 
-### Performance Targets
+| Package | Internal Dependencies | Runtime Dependencies |
+|---------|----------------------|---------------------|
+| `core` | none | none |
+| `classifiers` | `core` (types + errors) | none (uses native `fetch`) |
+| `languages` | `core` (types + errors) | none |
+| `evaluation` | `core` (types + errors + RouterInterface) | none |
+| `confidence-router` | `core`, `classifiers`, `languages`, `evaluation` | none |
 
-- **Decision Time**: <10ms (core logic)
-- **Memory Usage**: <50MB baseline
-- **Concurrent Requests**: 1000+ requests/second
-- **Bundle Size**: <100KB gzipped
+The entire ecosystem has zero external runtime dependencies beyond Node.js built-ins. The LLM classifier uses native `fetch` (Node 18+).
 
-## Security Considerations
-
-### Input Validation
-
-- Validate all classification results
-- Sanitize user inputs for classifiers
-- Validate configuration parameters
-- Rate limit external API calls
-
-### Data Protection
-
-- Secure handling of API keys
-- Encrypt sensitive configuration
-- Implement proper access controls
-- Audit logging for decisions
-
-## Monitoring & Observability
-
-### Metrics Collection
-
-```typescript
-interface RouterMetrics {
-  decisionsTotal: number;
-  decisionsByType: {
-    route: number;
-    clarify: number;
-    fallback: number;
-  };
-  avgDecisionTime: number;
-  errorRate: number;
-  classifierUsage: Record<string, number>;
-}
-```
-
-### Logging Strategy
-
-- Structured JSON logging
-- Decision audit trail
-- Performance metrics logging
-- Error tracking and alerting
-
-## Deployment Architecture
-
-### Package Distribution
-
-The library is distributed as a dual ESM/CJS package via npm:
-
-```json
-// package.json
-{
-  "name": "confidence-router",
-  "type": "module",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "types": "./dist/index.d.ts"
-    }
-  }
-}
-```
-
-### Recommended Deployment
-
-As a library, `confidence-router` is embedded in consumer applications. For a hosted decision service:
+## Directory Reference
 
 ```
-┌─────────────────┐    ┌──────────────────┐
-│ Load Balancer   │    │ Configuration    │
-│                 │    │ Service          │
-└────────┬────────┘    └──────────────────┘
-         │
-    ┌────┴────┐
-    │         │
-┌───▼───┐ ┌──▼────┐
-│Router │ │Router │  (Horizontal Scaling)
-│Node 1 │ │Node 2 │
-└───┬───┘ └──┬────┘
-    │         │
-    └────┬────┘
-         │
-    ┌────┴─────┐
-    │          │
-┌───▼──┐ ┌────▼────┐
-│Redis │ │Database │  (Caching & Persistence)
-└──────┘ └─────────┘
+packages/core/src/
+  types/index.ts          # All type definitions + DI interfaces
+  types/errors.ts         # RouterError class + RouterErrorType enum
+  config/index.ts         # DEFAULT_CONFIG, validateConfig, mergeConfig
+  DecisionEngine.ts       # Core threshold evaluation engine
+  index.ts                # Barrel export
+
+packages/classifiers/src/
+  ClassifierRegistry.ts   # Named registration + fallback chains
+  KeywordClassifier.ts    # Pattern-matching classifier
+  EmbeddingSimilarityClassifier.ts  # Cosine similarity classifier
+  LLMClassifier.ts        # OpenAI + Anthropic LLM classifier
+  index.ts                # Barrel export
+
+packages/languages/src/
+  LanguageManager.ts      # 47-locale registry with English fallback
+  PromptGenerator.ts      # Template interpolation with locale formatting
+  configs/*.ts            # 47 static language config files
+  index.ts                # Barrel export
+
+packages/evaluation/src/
+  ThresholdOptimizer.ts   # Grid search + metrics calculation
+  index.ts                # Barrel export
+
+packages/confidence-router/src/
+  ConfidenceRouter.ts     # DI-refactored main router class
+  RouterFactory.ts        # Factory functions
+  index.ts                # Full barrel re-exporting all sub-packages
 ```
 
-### Environment Configuration
+## License
 
-```bash
-# Required
-ROUTER_ROUTE_THRESHOLD=0.8
-ROUTER_FALLBACK_THRESHOLD=0.3
-ROUTER_DEFAULT_CLASSIFIER=llm
-
-# Optional
-ROUTER_LANGUAGES=en,es,fr,de
-ROUTER_EVAL_MODE=false
-ROUTER_LOG_LEVEL=info
-```
-
-## Testing Strategy
-
-### Test Categories
-
-1. **Unit Tests**: Core logic, thresholds, decision engine
-2. **Integration Tests**: Classifier integration, language system
-3. **Performance Tests**: Load testing, stress testing
-4. **Evaluation Tests**: Threshold optimization, metrics accuracy
-
-### Test Coverage Goals
-
-- **Unit Tests**: >95% coverage
-- **Integration Tests**: All critical paths
-- **E2E Tests**: Complete workflows
-
-## Future Extensibility
-
-### Plugin Architecture
-
-```typescript
-interface RouterPlugin {
-  name: string;
-  version: string;
-  
-  beforeDecide?(context: DecisionContext): Promise<void>;
-  afterDecide?(context: DecisionContext, decision: RoutingDecision): Promise<void>;
-  onError?(error: RouterError): Promise<void>;
-}
-```
-
-### Extension Points
-
-1. **Custom Classifiers**: Implement Classifier interface
-2. **Custom Prompts**: Provide language templates
-3. **Custom Handlers**: Implement fallback handlers
-4. **Custom Metrics**: Extend metrics collection
-
-## Conclusion
-
-This architecture provides a robust, scalable, and extensible foundation for the Confidence Router system. The modular design allows for easy maintenance and future enhancements while maintaining high performance and reliability standards.
+[MIT](LICENSE)
 
 ---
 
-**Last Updated**: 2026-04-22  
-**Version**: 1.0.0  
-**Status**: v0.1.0 Core Implemented — 99%+ test coverage, build passing
+**Last Updated**: 2026-04-30
+**Version**: 2.0.0
+**Status**: Active Development — Monorepo with 5 packages, 10 workspaces
