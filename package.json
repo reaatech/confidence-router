@@ -5,7 +5,7 @@
   "description": "Decision engine for route/clarify/fallback patterns",
   "type": "module",
   "scripts": {
-    "build": "turbo run build",
+    "build": "pnpm install && turbo run build",
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",
     "lint": "biome check .",
