@@ -20,30 +20,27 @@ import type {
   RoutingDecision,
 } from './types/index.js';
 
+export { DEFAULT_CONFIG, mergeConfig, validateConfig } from './config/index.js';
+export { DecisionEngine } from './DecisionEngine.js';
+export { RouterError, RouterErrorType } from './types/errors.js';
 export type {
   ClassificationResult,
-  Prediction,
-  RoutingDecision,
-  DecisionType,
-  RouterConfig,
-  ClassifierConfig,
   Classifier,
-  LanguageConfig,
-  EvaluationDataset,
-  LabeledExample,
-  EvaluationMetrics,
-  ConfusionMatrix,
-  OptimizedThresholds,
-  FallbackHandler,
-  RouterInterface,
-  LanguageManagerInterface,
-  PromptGeneratorInterface,
+  ClassifierConfig,
   ClassifierRegistryInterface,
   ConfidenceRouterDeps,
+  ConfusionMatrix,
+  DecisionType,
+  EvaluationDataset,
+  EvaluationMetrics,
+  FallbackHandler,
+  LabeledExample,
+  LanguageConfig,
+  LanguageManagerInterface,
+  OptimizedThresholds,
+  Prediction,
+  PromptGeneratorInterface,
+  RouterConfig,
+  RouterInterface,
+  RoutingDecision,
 };
-
-export { RouterError, RouterErrorType } from './types/errors.js';
-
-export { DEFAULT_CONFIG, validateConfig, mergeConfig } from './config/index.js';
-
-export { DecisionEngine } from './DecisionEngine.js';

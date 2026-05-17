@@ -1,5 +1,5 @@
-import { ConfidenceRouter } from '@reaatech/confidence-router';
 import type { ClassificationResult, Classifier } from '@reaatech/confidence-router';
+import { ConfidenceRouter } from '@reaatech/confidence-router';
 
 // A simple keyword-based classifier
 const keywordClassifier: Classifier = {

@@ -1,5 +1,5 @@
-import { ConfidenceRouter } from '@reaatech/confidence-router';
 import type { EvaluationDataset } from '@reaatech/confidence-router';
+import { ConfidenceRouter } from '@reaatech/confidence-router';
 
 // Sample labeled dataset for threshold tuning
 const dataset: EvaluationDataset = {

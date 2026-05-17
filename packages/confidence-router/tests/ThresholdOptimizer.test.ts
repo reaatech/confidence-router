@@ -1,5 +1,5 @@
-import { RouterError } from '@reaatech/confidence-router-core';
 import type { EvaluationDataset } from '@reaatech/confidence-router-core';
+import { RouterError } from '@reaatech/confidence-router-core';
 import { ThresholdOptimizer } from '@reaatech/confidence-router-evaluation';
 import { describe, expect, it } from 'vitest';
 import { ConfidenceRouter } from '../src/ConfidenceRouter.js';
