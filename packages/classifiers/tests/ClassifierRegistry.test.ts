@@ -1,5 +1,5 @@
-import { RouterError } from '@reaatech/confidence-router-core';
 import type { ClassificationResult, Classifier } from '@reaatech/confidence-router-core';
+import { RouterError } from '@reaatech/confidence-router-core';
 import { describe, expect, it } from 'vitest';
 import { ClassifierRegistry } from '../src/ClassifierRegistry.js';
 

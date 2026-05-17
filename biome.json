@@ -1,10 +1,15 @@
 {
   "files": {
-    "ignore": ["dist", ".turbo", "node_modules", "coverage", ".changeset"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/.turbo",
+      "!**/node_modules",
+      "!**/coverage",
+      "!**/.changeset"
+    ]
   },
-  "organizeImports": {
-    "enabled": true
-  },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "linter": {
     "enabled": true,
     "rules": {
