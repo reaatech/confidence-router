@@ -12,8 +12,7 @@ import type {
 } from '@reaatech/confidence-router-core';
 import { DecisionEngine, mergeConfig, validateConfig } from '@reaatech/confidence-router-core';
 import { ThresholdOptimizer } from '@reaatech/confidence-router-evaluation';
-import { LanguageManager } from '@reaatech/confidence-router-languages';
-import { PromptGenerator } from '@reaatech/confidence-router-languages';
+import { LanguageManager, PromptGenerator } from '@reaatech/confidence-router-languages';
 
 export class ConfidenceRouter {
   private config: RouterConfig;

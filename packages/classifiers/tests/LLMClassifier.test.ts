@@ -388,7 +388,6 @@ describe('LLMClassifier', () => {
 
   it('throws when API key is missing', () => {
     const originalEnv = process.env.OPENAI_API_KEY;
-    // biome-ignore lint/performance/noDelete: required to test missing env var behavior
     delete process.env.OPENAI_API_KEY;
 
     try {
