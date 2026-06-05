@@ -1,6 +1,6 @@
 {
   "name": "@reaatech/confidence-router-classifiers",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Pluggable classifiers for confidence-router (keyword, embedding, LLM)",
   "license": "MIT",
   "author": "Rick Somers <rick@reaatech.com> (https://reaatech.com)",

@@ -1,6 +1,6 @@
 {
   "name": "@reaatech/confidence-router",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Decision engine for route/clarify/fallback patterns",
   "license": "MIT",
   "author": "Rick Somers <rick@reaatech.com> (https://reaatech.com)",
