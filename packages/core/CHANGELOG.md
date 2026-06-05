@@ -1,5 +1,11 @@
 # @reaatech/confidence-router-core
 
+## 0.1.2
+
+### Patch Changes
+
+- bump versions for re-publish (0.1.1 already published on npm)
+
 ## 0.1.1
 
 ### Patch Changes

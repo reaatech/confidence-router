@@ -1,6 +1,6 @@
 {
   "name": "@reaatech/confidence-router-evaluation",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Threshold optimization and evaluation harness for confidence-router",
   "license": "MIT",
   "author": "Rick Somers <rick@reaatech.com> (https://reaatech.com)",
